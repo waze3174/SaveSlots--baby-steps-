@@ -7,8 +7,9 @@ a melonloader mod for baby steps that gives you more save slots. the game has 3 
 - more save slots on the save screen, 6 by default, up to 12 (gamma, delta, epsilon...)
 - the list moves up and shrinks a bit so everything still fits on screen, back button included
 - works with a gamepad like the normal slots
-- name a save: highlight it and press **Y** (gamepad) or **F2** (keyboard). the name shows instead of the slot letter, like `MANBREAKER (POISON SWAMP)`. empty name puts the letter back. deleting a save clears its name
-- with [BabyStepsMenuLib](https://github.com/caleborchard/BabyStepsMenuLib) installed (optional, comes with the multiplayer mod) Y opens its on-screen keyboard. without it, Y opens steam's keyboard, or just type on a keyboard
+- name a save: highlight it and press **Y** (gamepad) or **F2** (keyboard). with a mouse, click a save or just point at it and press F2. the name shows instead of the slot letter, like `MANBREAKER (POISON SWAMP)`. empty name puts the letter back. deleting a save clears its name
+- with [BabyStepsMenuLib](https://github.com/caleborchard/BabyStepsMenuLib) installed (optional, comes with the multiplayer mod) naming opens its on-screen keyboard, and you can type on a real keyboard into it too. without it, Y opens steam's keyboard, or just type on a keyboard
+- while you type a name, the minimap mod's keys and buttons are off
 
 ## install
 

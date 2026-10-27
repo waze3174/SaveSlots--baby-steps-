@@ -10,7 +10,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(SaveSlots.Core), "SaveSlots", "1.0.0", "waze3174")]
+[assembly: MelonInfo(typeof(SaveSlots.Core), "SaveSlots", "1.0.1", "waze3174")]
 [assembly: MelonGame]
 [assembly: MelonOptionalDependencies("BabyStepsMenuLib")]
 
@@ -37,6 +37,11 @@ public class Core : MelonMod
         SlotCount = cat.CreateEntry("SlotCount", 6, "Save slots", $"How many save slots the title menu shows (3 to {MaxSlots}). Saves in slots you hide are kept.");
         Rename.Init(Path.Combine(dir, "SaveSlots.cfg"));
         LoggerInstance.Msg($"{Count} save slots");
+    }
+
+    public override void OnLateInitializeMelon()
+    {
+        try { Rename.MuteMinimap(HarmonyInstance); } catch (Exception e) { LoggerInstance.Warning("minimap: " + e.Message); }
     }
 
     internal static int Count => Math.Clamp(SlotCount.Value, 3, MaxSlots);
@@ -388,9 +393,10 @@ public class Core : MelonMod
                 case 0xCD: case 0xD1: p += 2; return;
                 case 0xCE: case 0xD2: case 0xCA: p += 4; return;
                 case 0xCF: case 0xD3: case 0xCB: p += 8; return;
-                case 0xD9: case 0xC4: p += U8(); return;
-                case 0xDA: case 0xC5: p += U16(); return;
-                case 0xDB: case 0xC6: p += (int)U32(); return;
+                // the length first, then the jump (p += U8() would read p before U8 moves it: a byte short)
+                case 0xD9: case 0xC4: { int n = U8(); p += n; return; }
+                case 0xDA: case 0xC5: { int n = U16(); p += n; return; }
+                case 0xDB: case 0xC6: { int n = (int)U32(); p += n; return; }
                 case 0xDC: for (int i = U16(); i > 0; i--) Skip(); return;
                 case 0xDD: for (long i = U32(); i > 0; i--) Skip(); return;
                 case 0xDE: for (int i = U16() * 2; i > 0; i--) Skip(); return;
@@ -400,9 +406,9 @@ public class Core : MelonMod
                 case 0xD6: p += 5; return;
                 case 0xD7: p += 9; return;
                 case 0xD8: p += 17; return;
-                case 0xC7: p += U8() + 1; return;
-                case 0xC8: p += U16() + 1; return;
-                case 0xC9: p += (int)U32() + 1; return;
+                case 0xC7: { int n = U8(); p += n + 1; return; }
+                case 0xC8: { int n = U16(); p += n + 1; return; }
+                case 0xC9: { int n = (int)U32(); p += n + 1; return; }
                 default: throw new InvalidDataException($"bad type 0x{t:X2}");
             }
         }

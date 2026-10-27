@@ -12,7 +12,8 @@ namespace SaveSlots;
 // a name per save, shown in place of the slot letter. kept only in our own cfg ([SaveSlotNames]); the game's files are never touched.
 // on the save screen: Y (gamepad) or F2 starts renaming the highlighted slot, enter keeps it, esc / B cancels,
 // an empty name goes back to the letter. deleting a save clears its name.
-// gamepad typing uses BabyStepsMenuLib's on-screen keyboard when it's there, else steam's floating keyboard
+// typing: BabyStepsMenuLib's on-screen keyboard when it's there, however renaming started, and a real keyboard types
+// into it too; without the library, typed straight in (steam's floating keyboard on a gamepad)
 static class Rename
 {
     const int MaxLength = 24;
@@ -26,7 +27,7 @@ static class Rename
     static string buffer = "";
     static bool onLib;            // typing through BabyStepsMenuLib's keyboard
     static bool sendNav, navOff;
-    static int blockUntil;        // keep the menu's input off for the frame typing ends (that press would load the save)
+    static int blockUntil;        // keep the menu's input off a few frames after typing ends (that press would load the save / go back)
     static bool noLib;            // the library isn't installed
 
     internal static string EditText => buffer + (Time.unscaledTime % 1f < 0.5f ? "_" : " ");
@@ -63,17 +64,22 @@ static class Rename
         if (Editing >= 0) { Type(m); return; }
         if ((int)m.currentMenuScreen != SaveScreen) return;
 
+        // a click on a save makes it the highlighted one, like moving there with the keys
+        if (Input.GetMouseButtonDown(0)) { int c = UnderMouse(m); if (c >= 0) Pick(m, c); }
+
         bool key = Input.GetKeyDown(KeyCode.F2);
         var rw = m.rwPlayer;
         bool pad = !key && !Input.GetKey(KeyCode.Tab) && rw != null && (rw.GetButtonDown(ActionY) || rw.GetButtonDown(ActionClearBinding));
         if (!key && !pad) return;
 
-        int k = Highlighted(m);
+        // F2 renames the save under the mouse, else the highlighted one
+        int k = key ? UnderMouse(m) : -1;
+        if (k >= 0) Pick(m, k); else k = Highlighted(m);
         if (k < 0) return;
         Editing = k;
         buffer = names[k].Value ?? "";
         Input.ResetInputAxes();
-        onLib = pad && OpenLib(k);
+        onLib = OpenLib(k);
         if (pad && !onLib) SteamKeyboard(m.slotText[k]);
         // the stick / enter / esc mustn't reach the row's buttons while typing; the library keyboard needs them for its keys
         var es = EventSystem.current;
@@ -108,13 +114,53 @@ static class Rename
         return -1;
     }
 
+    // the menu list's row holding slot k's text
+    static int RowOf(Il2Cpp.MenuItemList list, TextMeshProUGUI t)
+    {
+        if (list == null || list.items == null || t == null) return -1;
+        for (int r = 0; r < list.items.Length; r++)
+        {
+            var go = list.items[r];
+            if (go != null && (t.gameObject == go || t.transform.IsChildOf(go.transform))) return r;
+        }
+        return -1;
+    }
+
+    // which slot row the mouse is over (the whole row, not just its text)
+    static int UnderMouse(Il2Cpp.Menu m)
+    {
+        var list = Il2Cpp.MenuItemList.active;
+        var st = m.slotText;
+        if (list == null || st == null) return -1;
+        for (int k = 0; k < st.Length; k++)
+        {
+            int r = RowOf(list, st[k]);
+            if (r < 0) continue;
+            var rt = list.items[r].GetComponent<RectTransform>() ?? st[k].rectTransform;
+            var canvas = st[k].canvas;
+            var cam = canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+            if (RectTransformUtility.RectangleContainsScreenPoint(rt, (Vector2)Input.mousePosition, cam)) return k;
+        }
+        return -1;
+    }
+
+    static void Pick(Il2Cpp.Menu m, int k)
+    {
+        var list = Il2Cpp.MenuItemList.active;
+        int r = RowOf(list, m.slotText[k]);
+        if (r < 0 || list.selected == r) return;
+        list.selected = r;
+        list.Select();
+    }
+
     static void Type(Il2Cpp.Menu m)
     {
         // left the save screen some other way (mouse click on back...)
         if ((int)m.currentMenuScreen != SaveScreen) { Stop(); return; }
         if (onLib)
         {
-            if (!LibKeyboard.IsOpen) Stop();   // closed without done = cancelled (done already saved and stopped)
+            if (!LibKeyboard.IsOpen) { Stop(); return; }   // closed without done = cancelled (done already saved and stopped)
+            if (LibKeyboard.RealKeys(MaxLength, v => buffer = v)) { Set(Editing, buffer); Stop(); }
             return;
         }
         if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton1)) { Stop(); return; }
@@ -130,7 +176,7 @@ static class Rename
     {
         if (Editing < 0) return;
         Editing = -1;
-        blockUntil = Time.frameCount + 1;
+        blockUntil = Time.frameCount + 10;
         if (onLib) { try { LibKeyboard.Close(); } catch { } onLib = false; }
         var es = EventSystem.current;
         if (navOff && es != null) es.sendNavigationEvents = sendNav;
@@ -145,6 +191,20 @@ static class Rename
 
     [HarmonyPatch(typeof(Il2Cpp.MenuItemList), "Update")]
     static class BlockListInput { static bool Prefix() => !MenuInputOff; }
+
+    // nor the minimap mod (its keys and pad buttons would open the map or switch views while typing a name)
+    internal static void MuteMinimap(HarmonyLib.Harmony h)
+    {
+        var t = AccessTools.TypeByName("BabyStepsMinimap.Core");
+        if (t == null) return;
+        foreach (var name in new[] { "HandleInput", "HandleGameplayInput", "HandleHelpInput", "HandleFullMapInput", "HandleJourneyInput", "HandleCalibrationInput", "HandleStickClicks" })
+        {
+            var m = AccessTools.Method(t, name);
+            if (m != null) h.Patch(m, prefix: new HarmonyMethod(typeof(Rename), nameof(MinimapPrefix)));
+        }
+    }
+
+    static bool MinimapPrefix() => !MenuInputOff;
 
     // a deleted save loses its name. the first press only turns DELETE into "you sure?"; the second one deletes
     [HarmonyPatch(typeof(Il2Cpp.Menu), nameof(Il2Cpp.Menu.DeleteSaveButton))]
