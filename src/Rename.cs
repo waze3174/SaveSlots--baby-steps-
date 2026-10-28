@@ -9,11 +9,11 @@ using UnityEngine.UI;
 
 namespace SaveSlots;
 
-// a name per save, shown in place of the slot letter. kept only in our own cfg ([SaveSlotNames]); the game's files are never touched.
-// on the save screen: Y (gamepad) or F2 starts renaming the highlighted slot, enter keeps it, esc / B cancels,
-// an empty name goes back to the letter. deleting a save clears its name.
-// typing: BabyStepsMenuLib's on-screen keyboard when it's there, however renaming started, and a real keyboard types
-// into it too; without the library, typed straight in (steam's floating keyboard on a gamepad)
+// a name per save, shown instead of the slot letter. it's only kept in my own cfg ([SaveSlotNames]), the game's files
+// are never touched. on the save screen Y (gamepad) or F2 renames the highlighted slot, enter keeps it, esc / B
+// cancels, and an empty name goes back to the letter. deleting a save clears its name.
+// typing goes through BabyStepsMenuLib's on-screen keyboard when it's installed, however renaming started, and a real
+// keyboard types into it too. without the library you type straight in (steam's floating keyboard on a gamepad)
 static class Rename
 {
     const int MaxLength = 24;
@@ -64,7 +64,7 @@ static class Rename
         if (Editing >= 0) { Type(m); return; }
         if ((int)m.currentMenuScreen != SaveScreen) return;
 
-        // a click on a save makes it the highlighted one, like moving there with the keys
+        // clicking a save makes it the highlighted one, like moving there with the keys
         if (Input.GetMouseButtonDown(0)) { int c = UnderMouse(m); if (c >= 0) Pick(m, c); }
 
         bool key = Input.GetKeyDown(KeyCode.F2);
@@ -81,7 +81,7 @@ static class Rename
         Input.ResetInputAxes();
         onLib = OpenLib(k);
         if (pad && !onLib) SteamKeyboard(m.slotText[k]);
-        // the stick / enter / esc mustn't reach the row's buttons while typing; the library keyboard needs them for its keys
+        // the stick / enter / esc mustn't reach the row's buttons while typing, but the library keyboard needs them for its keys
         var es = EventSystem.current;
         navOff = !onLib && es != null;
         if (navOff) { sendNav = es.sendNavigationEvents; es.sendNavigationEvents = false; }
@@ -159,7 +159,7 @@ static class Rename
         if ((int)m.currentMenuScreen != SaveScreen) { Stop(); return; }
         if (onLib)
         {
-            if (!LibKeyboard.IsOpen) { Stop(); return; }   // closed without done = cancelled (done already saved and stopped)
+            if (!LibKeyboard.IsOpen) { Stop(); return; }   // closed without done is a cancel (done already saved and stopped)
             if (LibKeyboard.RealKeys(MaxLength, v => buffer = v)) { Set(Editing, buffer); Stop(); }
             return;
         }
@@ -185,19 +185,20 @@ static class Rename
 
     static bool MenuInputOff => Editing >= 0 || Time.frameCount <= blockUntil;
 
-    // while typing, the menu must not see enter / A (would load the save), esc / B (would leave) or the stick
+    // while typing, the menu mustn't see enter / A (it would load the save), esc / B (it would leave) or the stick
     [HarmonyPatch(typeof(Il2Cpp.Menu), "PausedInput")]
     static class BlockMenuInput { static bool Prefix() => !MenuInputOff; }
 
     [HarmonyPatch(typeof(Il2Cpp.MenuItemList), "Update")]
     static class BlockListInput { static bool Prefix() => !MenuInputOff; }
 
-    // nor the minimap mod (its keys and pad buttons would open the map or switch views while typing a name)
+    // nor should the minimap mod (its keys and pad buttons open the map or switch views). it reads its keys (M for the
+    // map...) right in its OnUpdate, so its whole update waits while typing
     internal static void MuteMinimap(HarmonyLib.Harmony h)
     {
         var t = AccessTools.TypeByName("BabyStepsMinimap.Core");
         if (t == null) return;
-        foreach (var name in new[] { "HandleInput", "HandleGameplayInput", "HandleHelpInput", "HandleFullMapInput", "HandleJourneyInput", "HandleCalibrationInput", "HandleStickClicks" })
+        foreach (var name in new[] { "OnUpdate", "HandleGameplayInput", "HandleHelpInput", "HandleFullMapInput", "HandleJourneyInput", "HandleCalibrationInput", "HandleStickClicks" })
         {
             var m = AccessTools.Method(t, name);
             if (m != null) h.Patch(m, prefix: new HarmonyMethod(typeof(Rename), nameof(MinimapPrefix)));
@@ -206,7 +207,7 @@ static class Rename
 
     static bool MinimapPrefix() => !MenuInputOff;
 
-    // a deleted save loses its name. the first press only turns DELETE into "you sure?"; the second one deletes
+    // a deleted save loses its name. the first press only turns DELETE into "you sure?", the second one deletes
     [HarmonyPatch(typeof(Il2Cpp.Menu), nameof(Il2Cpp.Menu.DeleteSaveButton))]
     static class ClearOnDelete
     {
@@ -231,8 +232,9 @@ static class Rename
     {
         if (hintFor != m || hint == null) { hintFor = m; hint = MakeHint(m); }
         if (hint == null) return;
-        hint.text = Editing >= 0 ? (onLib ? "TYPING A NAME" : "ENTER: KEEP   ESC: CANCEL") : "Y / F2: NAME A SAVE";
-        // beside Back, lined up with the DELETE column (after the list is fitted, so follow it every frame)
+        string want = Editing >= 0 ? (onLib ? "TYPING A NAME" : "ENTER: KEEP   ESC: CANCEL") : "Y / F2: NAME A SAVE";
+        if (hint.text != want) hint.text = want;
+        // beside Back, lined up with the DELETE column. the list gets fitted after this is made, so it follows every frame
         var dt = m.deleteText;
         var items = hint.transform.parent.GetComponent<Il2Cpp.MenuItemList>()?.items;
         var back = items == null || items.Length == 0 || items[items.Length - 1] == null ? null : items[items.Length - 1].transform;   // the game's Back
@@ -267,7 +269,7 @@ static class Rename
         return t;
     }
 
-    // ---- steam's floating keyboard (deck / big picture); it types into the game as key presses ----
+    // ---- steam's floating keyboard (deck / big picture), it types into the game as key presses ----
 
     [DllImport("steam_api64", CallingConvention = CallingConvention.Cdecl)]
     static extern IntPtr SteamAPI_SteamUtils_v010();

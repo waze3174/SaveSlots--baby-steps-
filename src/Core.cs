@@ -10,21 +10,22 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
-[assembly: MelonInfo(typeof(SaveSlots.Core), "SaveSlots", "1.0.1", "waze3174")]
+[assembly: MelonInfo(typeof(SaveSlots.Core), "SaveSlots", "1.0.2", "waze3174")]
 [assembly: MelonGame]
 [assembly: MelonOptionalDependencies("BabyStepsMenuLib")]
 
 namespace SaveSlots;
 
-// more than the game's 3 save slots. the save code already works for any slot number (save{i}.sav ...);
-// only the title menu has 3 rows, a 3-entry cachedSaveDays and 3 slot names (ALPHA / BETA / SIGMA)
+// more than the game's 3 save slots. the game's save code already works with any slot number (save{i}.sav ...),
+// it's only the title menu that has 3 rows, a 3-long cachedSaveDays and 3 slot names (ALPHA / BETA / SIGMA)
 public class Core : MelonMod
 {
     internal static Core Inst;
     internal static MelonPreferences_Entry<int> SlotCount;
 
     // names for slots past the game's three
-    static readonly string[] Names = { "GAMMA", "DELTA", "EPSILON", "ZETA", "ETA", "THETA", "IOTA", "KAPPA", "LAMBDA" };   // capped at 12 slots: past that the list has to shrink too much to fit
+    // 12 slots at most, past that the list has to shrink too much to fit
+    static readonly string[] Names = { "GAMMA", "DELTA", "EPSILON", "ZETA", "ETA", "THETA", "IOTA", "KAPPA", "LAMBDA" };
     internal static int MaxSlots => 3 + Names.Length;
 
     public override void OnInitializeMelon()
@@ -57,16 +58,23 @@ public class Core : MelonMod
         static void Prefix(Il2Cpp.Menu __instance)
         {
             try { Grow(__instance); }
-            catch (Exception e) { Inst.LoggerInstance.Error("grow: " + e); built = __instance; }
+            catch (Exception e) { Once("grow", e); built = __instance; }
         }
 
-        // the game labels every row each frame with slot 1's name past index 2: put ours on
+        // past row 3 the game labels every row with slot 1's name, every frame, so ours go on after it
         static void Postfix(Il2Cpp.Menu __instance)
         {
-            try { Relabel(__instance); } catch (Exception e) { Inst.LoggerInstance.Error("relabel: " + e); }
-            try { TryFit(); } catch (Exception e) { Inst.LoggerInstance.Error("fit: " + e); toFit = null; }
-            try { Rename.Update(__instance); } catch (Exception e) { Inst.LoggerInstance.Error("rename: " + e); Rename.Stop(); }
+            try { Relabel(__instance); } catch (Exception e) { Once("relabel", e); }
+            try { TryFit(); } catch (Exception e) { Once("fit", e); toFit = null; }
+            try { Rename.Update(__instance); } catch (Exception e) { Once("rename", e); Rename.Stop(); }
         }
+    }
+
+    // these run every frame: an error is logged once, not 60 times a second
+    static readonly HashSet<string> told = new();
+    static void Once(string what, Exception e)
+    {
+        if (told.Add(what)) Inst.LoggerInstance.Error(what + ": " + e);
     }
 
     static void Grow(Il2Cpp.Menu m)
@@ -75,7 +83,7 @@ public class Core : MelonMod
         if (st == null || dt == null || st.Length < 3 || dt.Length < 3) return;
         int n = Count;
 
-        // LoadSave makes a fresh int[3] after every scene load; Update indexes it by row
+        // LoadSave makes a fresh int[3] after every scene load, and Update reads it by row
         var days = m.cachedSaveDays;
         if (days != null && days.Length < n)
         {
@@ -113,7 +121,7 @@ public class Core : MelonMod
         m.slotText = nst;
         m.deleteText = ndt;
         AddToItemList(newSlotRows);
-        // name the copies "Gamma"... like the game's "Sigma" (after AddToItemList, which finds them by the original's name)
+        // name the copies "Gamma"... like the game's "Sigma" (after AddToItemList, it finds them by the original's name)
         for (int k = 3; k < n; k++)
             if (nst[k] != null) nst[k].gameObject.name = SlotName(k)[0] + SlotName(k).Substring(1).ToLowerInvariant();
         var il = slotRows[0].parent.GetComponent<Il2Cpp.MenuItemList>();
@@ -121,20 +129,20 @@ public class Core : MelonMod
         {
             var names = new List<string>();
             foreach (var g in il.items) names.Add(g == null ? "-" : g.name);
-            Inst.LoggerInstance.Msg("gamepad list: " + string.Join(", ", names));
+            DebugLog.Write("gamepad list: " + string.Join(", ", names));
         }
         if (list != null) { toFit = list; fitRows = slotRows; fitExtra = n - 3; }
-        Inst.LoggerInstance.Msg($"added slots 4-{n} ({(sameRow ? "delete button in the row" : "separate delete column")})");
+        DebugLog.Write($"added slots 4-{n} ({(sameRow ? "delete button in the row" : "separate delete column")})");
     }
 
     // ---- fitting the longer list on screen ----
-    // the list grows down from where the game put it, past the bottom of the screen (Back included).
-    // keep its bottom where the game had it, let it grow up into the space under the title, shrink it if that's not enough
+    // the list grows down from where the game put it, past the bottom of the screen (Back too). i keep its bottom
+    // where the game had it, let it grow up into the space under the title, and shrink it if that's not enough
 
     static RectTransform toFit; static Transform[] fitRows; static int fitExtra;
 
-    // the save screen isn't laid out until it's first shown: fit then. where the game had the bottom =
-    // the bottom now, raised by the rows we added
+    // the save screen isn't laid out until it first shows, so it's fitted then. where the game had the bottom is the
+    // bottom now, raised by the rows i added
     static void TryFit()
     {
         if (toFit == null) return;
@@ -165,7 +173,7 @@ public class Core : MelonMod
         p.y += (bottom0 - ListBottom(list)) / (px / units);
         list.anchoredPosition = p;
         Rebuild(list);
-        Inst.LoggerInstance.Msg($"save list fitted: scale {s:F2}, rows {ScreenY(rows[0].TryCast<RectTransform>(), 1):F0} to {ListBottom(list):F0} px of {Screen.height}");
+        DebugLog.Write($"save list fitted: scale {s:F2}, rows {ScreenY(rows[0].TryCast<RectTransform>(), 1):F0} to {ListBottom(list):F0} px of {Screen.height}");
     }
 
     static void Rebuild(RectTransform list)
@@ -244,7 +252,7 @@ public class Core : MelonMod
         return null;
     }
 
-    // copies keep the original's persistent onClick (SetSaveSlot(2) / DeleteSaveButton(2)): point them at slot k
+    // copies keep the original's onClick (SetSaveSlot(2) / DeleteSaveButton(2)), so they get pointed at slot k
     static void Wire(Il2Cpp.Menu m, Transform row, Transform drow, bool sameRow, TextMeshProUGUI del, int k)
     {
         foreach (var r in sameRow ? new[] { row } : new[] { row, drow })
@@ -259,9 +267,9 @@ public class Core : MelonMod
             }
     }
 
-    // gamepad up / down goes through the game's MenuItemList on the save screen (unity navigation is off);
-    // put each copy's entry right after the last original row's entry. left / right (slot <-> delete) is a
-    // HorizontalButtonSwitcher inside the row, which the copy already points at its own buttons
+    // gamepad up / down on the save screen goes through the game's MenuItemList (unity's navigation is off), so each
+    // copy goes in right after the last original row. left / right (slot <-> delete) is a HorizontalButtonSwitcher
+    // inside the row, and the copy's already points at its own buttons
     static void AddToItemList(List<Transform> rows)
     {
         var list = rows[0].parent.GetComponent<Il2Cpp.MenuItemList>();
@@ -286,21 +294,22 @@ public class Core : MelonMod
 
     static string RelPath(Transform root, Transform t) => t == root ? "" : (t.parent == root ? t.name : RelPath(root, t.parent) + "/" + t.name);
 
-    // the game writes "<slot name> (<place>)" on every row each frame. swap the slot name for the
-    // player's name for that save, or for our greek letter past slot 3 (the game puts ALPHA there)
+    // the game writes "<slot name> (<place>)" on every row each frame. i swap the slot name for the name you gave that
+    // save, or for my greek letter past slot 3 (the game puts ALPHA there)
+    static readonly Il2Cpp.LocTerm[] GameNames = { Il2Cpp.LocTerm.MSID06_ALPHA, Il2Cpp.LocTerm.MSID11_BETA, Il2Cpp.LocTerm.MSID88_SIGMA };
+
     static void Relabel(Il2Cpp.Menu m)
     {
         var st = m.slotText;
         if (st == null) return;
-        var game = new[] { Il2Cpp.LocTerm.MSID06_ALPHA, Il2Cpp.LocTerm.MSID11_BETA, Il2Cpp.LocTerm.MSID88_SIGMA };
         for (int k = 0; k < st.Length; k++)
         {
             var t = st[k];
             if (t == null || !t.gameObject.activeInHierarchy) continue;
-            if (Rename.Editing == k) { t.text = Rename.EditText; continue; }
+            if (Rename.Editing == k) { string e = Rename.EditText; if (t.text != e) t.text = e; continue; }
             string label = Rename.Get(k) ?? SlotName(k);
             if (label == null) continue;
-            string prefix = Il2Cpp.Menu.GetTranslated(game[k < 3 ? k : 0]);
+            string prefix = Il2Cpp.Menu.GetTranslated(GameNames[k < 3 ? k : 0]);
             string s = t.text;
             if (s != null && prefix != null && s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 t.text = label + s.Substring(prefix.Length);
@@ -311,7 +320,7 @@ public class Core : MelonMod
 
     static string saveDir;
 
-    // SaveFile is a MessagePack array; key 1 is lastCampfire, which is what the menu shows (dayPlaceNames[lastCampfire])
+    // the save is a MessagePack array, and key 1 is lastCampfire, which is what the menu shows (dayPlaceNames[lastCampfire])
     static int ReadSaveDay(int k)
     {
         try
@@ -340,7 +349,7 @@ public class Core : MelonMod
         foreach (var f in Directory.GetFiles(root, "save*.sav", SearchOption.AllDirectories))
         {
             saveDir = Path.GetDirectoryName(f);
-            Inst.LoggerInstance.Msg("saves in " + saveDir);
+            DebugLog.Write("saves in " + saveDir);
             break;
         }
         return saveDir;

@@ -4,9 +4,9 @@ using UnityEngine;
 
 namespace SaveSlots;
 
-// the on-screen keyboard from BabyStepsMenuLib (the one the multiplayer mod opens for lobby passwords).
-// optional: it only exists when that library is installed and some mod has a menu built with it.
-// kept in its own class so nothing touches the library's types when it's missing
+// the on-screen keyboard from BabyStepsMenuLib (the one the multiplayer mod opens for lobby passwords). it's optional,
+// it only exists when that library is installed and some mod has a menu built with it. it's in its own class so
+// nothing touches the library's types when it's missing
 static class LibKeyboard
 {
     static MenuInjectionLibrary.InjectedMenu open;
@@ -31,7 +31,7 @@ static class LibKeyboard
 
     internal static bool IsOpen => open != null && open.IsKeyboardOpen;
 
-    // a real keyboard types into it too: its text lives in our field, then it redraws. true on enter
+    // a real keyboard types into it too. its text lives in our field, then it redraws. true on enter
     static System.Reflection.FieldInfo edited;
     static System.Reflection.MethodInfo refresh;
 
